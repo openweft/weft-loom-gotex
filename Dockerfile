@@ -23,7 +23,7 @@
 # GOOS/GOARCH instead of running the Go toolchain itself under QEMU emulation
 # for every target platform — this is what makes linux/loong64 buildable at
 # all, since the official golang image publishes no linux/loong64 manifest
-# and a naive `FROM --platform=$TARGETPLATFORM golang:1.26` could never pull
+# and a naive `FROM --platform=$TARGETPLATFORM golang:1.27` could never pull
 # a base image for it even with QEMU installed. The scratch final stage has
 # no OS content of its own, so it never needs a base-image manifest either.
 # `go install` (unlike `go build -o`) writes a cross-compiled binary into a
@@ -38,7 +38,37 @@
 # back to the top-level path for that one native leg.
 ARG GOTEX_VERSION=latest
 
-FROM --platform=$BUILDPLATFORM golang:1.26 AS build
+# ⛔ THIS TAG IS A FLOOR THE THING BEING BUILT CAN RAISE UNDER IT. The official
+# golang images set GOTOOLCHAIN=local, deliberately — the image version IS the
+# toolchain, and nothing is fetched at build time. So when go-tex/engine raised
+# its own `go` directive, this image stopped being able to install it, and the
+# weekly build went red on 2026-10-05 with:
+#
+#   go: github.com/go-tex/engine/cmd/gotex@latest:
+#       github.com/go-tex/engine@v0.231.0 requires go >= 1.27.1
+#       (running go 1.26.8; GOTOOLCHAIN=local)
+#
+# on all five legs at once. Raise this tag; do NOT unset GOTOOLCHAIN to make it
+# go away, because then the image no longer says which toolchain built it.
+#
+# The minor floats on purpose (`1.27`, not `1.27.2`) so security patches arrive
+# without a commit — and a pinned patch would break on the next directive raise
+# just as surely as 1.26 did.
+#
+# ⚠ THE MARGIN IS CURRENTLY ZERO, which is worth knowing before the next raise.
+# Measured 2026-10-12 by building this file, not by reading tag lists:
+#
+#   golang:1.27                  go1.27.2   on linux/amd64 AND linux/arm64
+#   engine v0.255.0 requires     >= 1.27.2  <- already past the 1.27.1 above
+#
+# So it passes today with nothing to spare: the very next directive raise in
+# go-tex/engine turns this red again, and the error above is what it will say.
+#
+# Read that error, do not reason about it from a tag. A `docker run golang:1.27
+# go version` here first answered go1.27.1 — a STALE LOCAL IMAGE — and that
+# number was nearly committed to this comment as a measurement. `--pull=always`
+# is what made it true.
+FROM --platform=$BUILDPLATFORM golang:1.27 AS build
 ARG GOTEX_VERSION
 ARG TARGETOS
 ARG TARGETARCH
